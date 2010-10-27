@@ -1,4 +1,7 @@
 import numpy as np
+import Cpyx
+
+CREATE_CYTHON_VERSION = False
 
 # Original Documentation:
 '''/*
@@ -91,12 +94,12 @@ def EllipseFitter(arr,usePrint=False):
     #boolean record
 
     sqrtPi = np.sqrt(np.pi)
-    #double    a11, a12, a22, m4, z, scale, tmp, xoffset, yoffset;
-    #double    RealAngle;
+    #double    a11, a12, a22, m4, z, scale, tmp, xoffset, yoffset
+    #double    RealAngle
 
     #if mask==None: # mask should never be None
     #    major = (width*2) / sqrtPi
-    #    minor = (height*2) / sqrtPi # * Info->PixelAspectRatio;
+    #    minor = (height*2) / sqrtPi # * Info->PixelAspectRatio
     #    angle = 0.0
     #    theta = 0.0
     #    if major < minor:
@@ -116,8 +119,8 @@ def EllipseFitter(arr,usePrint=False):
     y2sum = 0.0
     xysum = 0.0
     #int bitcountOfLine
-    #double   xe, ye;
-    #int xSumOfLine;
+    #double   xe, ye
+    #int xSumOfLine
     for y in range(height):
         bitcountOfLine = 0
         xSumOfLine = 0
@@ -137,7 +140,7 @@ def EllipseFitter(arr,usePrint=False):
         bitCount += bitcountOfLine
 
     # getMoments
-    #double   x1, y1, x2, y2, xy;
+    #double   x1, y1, x2, y2, xy
     if bitCount != 0:
         x2sum += 0.08333333 * bitCount
         y2sum += 0.08333333 * bitCount
@@ -205,13 +208,236 @@ def EllipseFitter(arr,usePrint=False):
     
     return angle,major,minor,xCenter,yCenter
 
+def EllipseFitterDNM(arr,cm=None):
+    pts = np.where(arr==1)
+    numPts = len(pts[0])
+    
+    if cm==None:
+        cm=map(np.mean,pts)
+    
+    #cm -- from a python / matplotlib perspective, the 0,0 pixel is centered on 0,0
+    [xCenter,yCenter] = [cm[0]+0.5 , cm[1]+0.5] # same meaning as IJ algorithm
+    # from an ImageJ perspective, the pixel has its corner on 0,0
+    # so that means it is centered on 0.5,0.5
+    
+    I_sq = np.zeros([2,2])
+    I_cm = np.zeros([2,2])
+    for i,p in enumerate(arr):
+        for j,q in enumerate(arr):
+            if arr[i,j]==1:
+                # add up Ixx, Iyy, and Ixy
+                # for this, m=1 and l=1 (mass and length of pixel square)
+                Dx = i-cm[0]
+                Dy = j-cm[1]
+                I_cm += [[Dy**2, Dx*Dy],
+                         [Dx*Dy,Dx**2]]
+    I_sq += 1./12*numPts * np.identity(2)
+    I_tot = I_cm + I_sq
+    
+    # Get Eigenvalues
+    # I for ellipse with major and minor axis a,b is:
+    # ((1/4 m b^2,0        ),
+    #  (        0,1/4 m a^2))
+    #I_adj = np.sqrt(I_tot*4./numPts) # radii
+    #I_adj*2 # double for diameters...
+    
+    
+    evals,evecs = np.linalg.eig(I_tot)
+    major,minor = 2*np.sqrt(evals*4./numPts)
+    print 'major,minor'
+    major,minor
+    
+    Isqrt = 2*np.sqrt(I_tot*4./numPts)
+    evalsB,evecsB = np.linalg.eig(Isqrt)
+    majB,minB = evalsB
+    print 'MM2'
+    majB,minB
+    # principle axis 1 angle
+    an1 = np.arctan2(evecs[0][0],evecs[0][1])*180/np.pi
+    an1 = 180+an1 if an1<0 else an1
+    # principle axis 2 angle
+    an2 = np.arctan2(evecs[1][0],evecs[1][1])*180/np.pi
+    an2 = 180+an2 if an2<0 else an2
+    # plot the major axis angle in 0 to 180 format
+    angle = (an1 if evals[0]>evals[1] else an2)
+    # now angle is the same as the IJ algorithm
+    return [angle,major,minor,cm[1],cm[0]]
+
+if CREATE_CYTHON_VERSION:
+    exec(Cpyx.CythonInline('''
+from __future__ import division
+import numpy as np
+cimport numpy as np
+cimport cython
+
+def EllipseFitterCython(np.ndarray[np.int_t, ndim=2] arr not None,usePrint=False):
+    cdef int left=0 # holdover from the ImageJ version
+    cdef int top=0 # holdover from the ImageJ version
+    cdef int width=arr.shape[0]
+    cdef int height=arr.shape[1]
+    
+    cdef double HALFPI = np.pi/2
+
+    cdef double xCenter # X centroid
+    cdef double yCenter # Y centroid
+    cdef double major # Length of major axis
+    cdef double minor # Length of minor axis
+    cdef double angle # Angle in degrees
+    cdef double theta # Angle in radians
+    # cdef int[] xCoordinates # Initialized by makeRoi() # Not used
+    # cdef int[] yCoordinates # Initialized by makeRoi() # Not used
+    cdef int nCoordinates = 0 #int # Initialized by makeRoi()
+    cdef int bitCount = 0 #int
+    cdef double  xsum, ysum, x2sum, y2sum, xysum
+    # cdef byte[] mask # Not used
+    #cdef int left, top, width, height # already defined!
+    cdef double   n
+    cdef double   xm, ym   #mean values
+    cdef double   u20, u02, u11  #central moments
+    #ImageProcessor ip # Not used
+    cdef double pw, ph
+    cdef int record # bool
+
+    cdef double sqrtPi = np.sqrt(np.pi)
+    cdef double    a11, a12, a22, m4, z, scale, tmp, xoffset, yoffset
+    cdef double    RealAngle
+
+    #if mask==None: # mask should never be None
+    #    major = (width*2) / sqrtPi
+    #    minor = (height*2) / sqrtPi # * Info->PixelAspectRatio
+    #    angle = 0.0
+    #    theta = 0.0
+    #    if major < minor:
+    #        tmp = major
+    #        major = minor
+    #        minor = tmp
+    #        angle = 90.0
+    #        theta = np.pi/2.0
+    #    xCenter = left + width / 2.0
+    #    yCenter = top + height / 2.0
+    #    return
+    
+    # computeSums
+    xsum = 0.0
+    ysum = 0.0
+    x2sum = 0.0
+    y2sum = 0.0
+    xysum = 0.0
+    cdef int bitcountOfLine
+    cdef double   xe, ye
+    cdef int xSumOfLine
+    cdef int x,y
+    for y in range(height):
+        bitcountOfLine = 0
+        xSumOfLine = 0
+        #offset = y*width # int
+        for x in range(width):
+            if arr[x,y] != 0:
+                bitcountOfLine+=1
+                xSumOfLine += x
+                x2sum += x * x
+        
+        xsum += xSumOfLine
+        ysum += bitcountOfLine * y
+        ye = y
+        xe = xSumOfLine
+        xysum += xe*ye
+        y2sum += ye*ye*bitcountOfLine
+        bitCount += bitcountOfLine
+
+    # getMoments
+    cdef double   x1, y1, x2, y2, xy
+    if bitCount != 0:
+        x2sum += 0.08333333 * bitCount
+        y2sum += 0.08333333 * bitCount
+        n = bitCount
+        x1 = xsum/n
+        y1 = ysum / n
+        x2 = x2sum / n
+        y2 = y2sum / n
+        xy = xysum / n
+        xm = x1
+        ym = y1
+        u20 = x2 - (x1 * x1)
+        u02 = y2 - (y1 * y1)
+        u11 = xy - x1 * y1
+
+    # rest...
+    m4 = 4.0 * np.abs(u02 * u20 - u11 * u11)
+    if m4 < 0.000001:
+        m4 = 0.000001
+    a11 = u02 / m4
+    a12 = u11 / m4
+    a22 = u20 / m4
+    xoffset = xm
+    yoffset = ym
+
+    tmp = a11 - a22
+    if tmp == 0.0:
+        tmp = 0.000001
+    theta = 0.5 * np.arctan(2.0 * a12 / tmp)
+    if theta < 0.0:
+        theta += HALFPI
+    if a12 > 0.0:
+        theta += HALFPI
+    elif a12 == 0.0:
+        if a22 > a11:
+            theta = 0.0
+            tmp = a22
+            a22 = a11
+            a11 = tmp
+        elif a11 != a22:
+            theta = HALFPI
+    tmp = np.sin(theta)
+    if tmp == 0.0:
+        tmp = 0.000001
+    z = a12 * np.cos(theta) / tmp
+    major = np.sqrt (1.0 / np.abs(a22 + z))
+    minor = np.sqrt (1.0 / np.abs(a11 - z))
+    scale = np.sqrt (bitCount / (np.pi * major * minor)) #equalize areas
+    major = major*scale*2.0
+    minor = minor*scale*2.0
+    angle = 180.0 * theta / np.pi
+    if angle == 180.0:
+        angle = 0.0
+    if major < minor:
+        tmp = major
+        major = minor
+        minor = tmp
+    xCenter = left + xoffset + 0.5
+    yCenter = top + yoffset + 0.5
+    
+    if usePrint:
+        print angle
+        print major,minor
+        print xCenter,yCenter
+    
+    return angle,major,minor,xCenter,yCenter
+'''))
+
 if __name__=='__main__':
-    arr=np.array([[0,0,0,1,1],
-                  [0,0,1,1,1],
-                  [1,1,1,1,0],
-                  [0,0,1,0,0],
-                  [0,0,1,0,0]])
-    EllipseFitter(arr,usePrint=True)
+    arr=np.array([[0,0,0,1,1,1,0,0,0],
+                  [0,0,1,1,1,1,1,0,0],
+                  [0,1,1,1,1,1,1,1,0],
+                  [1,1,1,1,1,1,1,1,1],
+                  [1,1,1,1,1,1,1,1,1],
+                  [1,1,1,1,1,1,1,1,1],
+                  [0,1,1,1,1,1,1,1,0],
+                  [0,0,1,1,1,1,1,0,0],
+                  [0,0,0,1,1,1,0,0,0]])
+    import time
+    t=time.time()
+    a=EllipseFitter(arr,usePrint=False)
+    print 'Py Time',time.time()-t ; t=time.time()
+    if CREATE_CYTHON_VERSION:
+        b=EllipseFitterCython(arr,usePrint=False)
+        print 'Cy Time',time.time()-t ; t=time.time()# 3x speed up... not bad, but not wonderful...
+    c=EllipseFitterDNM(arr)
+    print 'DNM Time',time.time()-t ; t=time.time()
+    # Test for consistency...
+    print a
+    #print b
+    print c
     arr
 
 def drawEllipse(angle,major,minor,xCenter,yCenter,maxY):
