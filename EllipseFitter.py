@@ -440,6 +440,18 @@ if __name__=='__main__':
     print c
     arr
 
+def RotationM(theta):
+    return np.array([[np.cos(theta),-np.sin(theta)],
+                     [np.sin(theta), np.cos(theta)]]) # Forwards Rotation
+def GetRotatedMajorMinor(major,minor,angle,woundAngle):
+    th=(woundAngle - angle)*np.pi/180
+    R=RotationM(th)
+    Rinv=RotationM(-th)
+    I = np.sqrt(np.dot(Rinv,np.dot([[major**2,0],
+                                    [0,minor**2]],R)))
+    return I[0][0],I[1][1]
+
+# Still broken...
 def drawEllipse(angle,major,minor,xCenter,yCenter,maxY):
     if major==0 and minor==0:
         return
