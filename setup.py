@@ -9,7 +9,7 @@ setup(
     scripts=[],
     url='http://pypi.python.org/pypi/EllipseFitter/',
     license='LICENSE.txt',
-    description='',
+    description='find best fit ellipses of binary images',
     long_description=open('README.rst').read(),
     install_requires=[
                       'numpy>=1.0'
