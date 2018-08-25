@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import numpy as np
 
 # Original Documentation:
@@ -199,9 +201,9 @@ def EllipseFitter(arr,usePrint=False):
     yCenter = top + yoffset + 0.5
     
     if usePrint:
-        print angle
-        print major,minor
-        print xCenter,yCenter
+        print(angle)
+        print(major,minor)
+        print(xCenter,yCenter)
     
     return angle,major,minor,xCenter,yCenter
 
@@ -210,7 +212,7 @@ def EllipseFitterDNM(arr,cm=None):
     numPts = len(pts[0])
     
     if cm==None:
-        cm=map(np.mean,pts)
+        cm=list(map(np.mean,pts))
     
     #cm -- from a python / matplotlib perspective, the 0,0 pixel is centered on 0,0
     [xCenter,yCenter] = [cm[0]+0.5 , cm[1]+0.5] # same meaning as IJ algorithm
@@ -241,13 +243,13 @@ def EllipseFitterDNM(arr,cm=None):
     
     evals,evecs = np.linalg.eig(I_tot)
     major,minor = 2*np.sqrt(evals*4./numPts)
-    print 'major,minor'
+    print('major,minor')
     major,minor
     
     Isqrt = 2*np.sqrt(I_tot*4./numPts)
     evalsB,evecsB = np.linalg.eig(Isqrt)
     majB,minB = evalsB
-    print 'MM2'
+    print('MM2')
     majB,minB
     # principle axis 1 angle
     an1 = np.arctan2(evecs[0][0],evecs[0][1])*180/np.pi
@@ -504,15 +506,15 @@ if __name__=='__main__':
     import time
     t=time.time()
     a=EllipseFitter(arr,usePrint=False)
-    print 'Py Time',time.time()-t ; t=time.time()
+    print('Py Time',time.time()-t) ; t=time.time()
     #if CREATE_CYTHON_VERSION:
     #    b=EllipseFitterCython(arr,usePrint=False)
     #    print 'Cy Time',time.time()-t ; t=time.time()# 3x speed up... not bad, but not wonderful...
     c=EllipseFitterDNM(arr)
-    print 'DNM Time',time.time()-t ; t=time.time()
+    print('DNM Time',time.time()-t) ; t=time.time()
     # Test for consistency...
-    print a
+    print(a)
     #print b
-    print c
+    print(c)
     arr
 
